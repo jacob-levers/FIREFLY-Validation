@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fireflyverify"
+version = "0.1.0"
+description = "Standalone single-particle-tracking accuracy grader for FIREFLY and palmTRACER outputs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Jacob Levers" }]
+dependencies = [
+    "numpy>=2,<3",
+    "pandas>=2.2,<3",
+    "scipy",
+    "matplotlib",
+    "tifffile",
+    "PySide6>=6.7,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pypdf"]
+
+[project.scripts]
+fireflyverify = "fireflyverify.cli:main"
+
+[project.gui-scripts]
+fireflyverify-gui = "fireflyverify.ui.app_qml:main"
+
+[tool.setuptools.packages.find]
+include = ["fireflyverify*"]
+
+[tool.setuptools.package-data]
+fireflyverify = ["ui/qml/**/*.qml", "ui/qml/assets/icons/*.svg"]
