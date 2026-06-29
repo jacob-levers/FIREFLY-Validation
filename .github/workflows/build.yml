@@ -1,0 +1,172 @@
+name: Build Distributables
+
+# Triggers:
+#   - Push a tag like  git tag v0.2.0 && git push --tags   → builds + attaches to a Release
+#   - Or run manually from the Actions tab (artifacts only)
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write          # create releases + upload assets
+
+jobs:
+  # ── macOS → FIREFLY-Validation.app → DMG ────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install "pyinstaller==6.11.1"
+
+      - name: Stamp __version__ from the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          export VERIFY_TAG="$TAG"
+          cat > stamp.py <<'PYEOF'
+          import os, re, pathlib
+          tag = os.environ["VERIFY_TAG"]
+          p = pathlib.Path("fireflyverify/__init__.py")
+          t = p.read_text(encoding="utf-8")
+          p.write_text(re.sub(r'^__version__ = ".*"', f'__version__ = "{tag}"',
+                              t, count=1, flags=re.M), encoding="utf-8")
+          PYEOF
+          python stamp.py && rm stamp.py
+          grep '^__version__' fireflyverify/__init__.py
+
+      - name: Build .app
+        run: pyinstaller fireflyverify.spec --noconfirm --clean
+
+      - name: Create DMG
+        run: |
+          for vol in /Volumes/FIREFLY-Validation*; do
+            [ -d "$vol" ] && hdiutil detach "$vol" -force || true
+          done
+          sleep 5
+          for attempt in 1 2 3 4; do
+            if hdiutil create -volname "FIREFLY-Validation" \
+                 -srcfolder "dist/FIREFLY-Validation.app" \
+                 -ov -format UDZO "dist/FIREFLY-Validation-macOS.dmg"; then
+              echo "DMG created (attempt $attempt)"; break
+            fi
+            [ $attempt -eq 4 ] && { echo "DMG failed"; exit 1; }
+            sleep $((attempt * 5))
+          done
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIREFLY-Validation-macOS
+          path: dist/FIREFLY-Validation-macOS.dmg
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/FIREFLY-Validation-macOS.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Windows → FIREFLY-Validation.exe (onefile) ──────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install "pyinstaller==6.11.1"
+
+      - name: Stamp __version__ from the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF -replace '^refs/tags/v', ''
+          $env:VERIFY_TAG = $tag
+          @'
+          import os, re, pathlib
+          tag = os.environ["VERIFY_TAG"]
+          p = pathlib.Path("fireflyverify/__init__.py")
+          t = p.read_text(encoding="utf-8")
+          p.write_text(re.sub(r'^__version__ = ".*"', f'__version__ = "{tag}"',
+                              t, count=1, flags=re.M), encoding="utf-8")
+          '@ | Set-Content -Encoding UTF8 -Path stamp.py
+          python stamp.py
+          if ($LASTEXITCODE -ne 0) { Write-Error "stamp failed"; exit 1 }
+          Remove-Item stamp.py
+          Select-String -Path fireflyverify/__init__.py -Pattern '^__version__'
+
+      - name: Build exe (onefile)
+        run: pyinstaller fireflyverify.spec --noconfirm --clean
+
+      - name: Verify exe exists and is reasonable size
+        shell: pwsh
+        run: |
+          $exe = "dist\FIREFLY-Validation.exe"
+          if (-not (Test-Path $exe)) { Write-Error "FATAL: $exe not produced"; exit 1 }
+          $mb = (Get-Item $exe).Length / 1MB
+          Write-Host ("exe size: {0:N1} MB" -f $mb)
+          if ($mb -lt 40) { Write-Error "FATAL: bundle suspiciously small ($mb MB)"; exit 1 }
+
+      - name: Smoke test (launch the onefile exe)
+        shell: pwsh
+        run: |
+          $exe = "dist\FIREFLY-Validation.exe"
+          $marker = Join-Path $env:RUNNER_TEMP "verify_ready.marker"
+          Remove-Item -Path $marker -ErrorAction SilentlyContinue
+          $env:VERIFY_READY_MARKER = $marker
+          $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+          $deadline = (Get-Date).AddSeconds(120)
+          $ready = $false
+          while ((Get-Date) -lt $deadline) {
+            if (Test-Path $marker) { $ready = $true; break }
+            if ($proc.HasExited) { Write-Error "FATAL: exited code $($proc.ExitCode) before ready"; exit 1 }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $ready) { Write-Error "FATAL: no ready marker in 120s — startup crash"; try { $proc.Kill() } catch {}; exit 1 }
+          Write-Host "OK: ready marker written"
+          taskkill /F /T /PID $proc.Id 2>$null | Out-Null
+          Stop-Process -Name "FIREFLY-Validation" -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+
+      - name: Rename exe for release
+        shell: pwsh
+        run: |
+          $ok = $false
+          for ($i = 1; $i -le 12; $i++) {
+            try { Move-Item dist\FIREFLY-Validation.exe dist\FIREFLY-Validation-Windows.exe -Force -ErrorAction Stop; $ok = $true; break }
+            catch { Stop-Process -Name "FIREFLY-Validation" -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3 }
+          }
+          if (-not $ok) { Write-Error "exe still locked after 12 attempts"; exit 1 }
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIREFLY-Validation-Windows
+          path: dist\FIREFLY-Validation-Windows.exe
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist\FIREFLY-Validation-Windows.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
