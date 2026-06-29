@@ -42,6 +42,7 @@ Item {
     Row {
         id: row
         spacing: 4
+        anchors.verticalCenter: parent.verticalCenter   // align labels with the pill
         Repeater {
             model: root.model
             delegate: Item {
