@@ -365,20 +365,9 @@ class VerifyController(QObject):
     @Slot(str)
     def exportReportPdf(self, path):
         try:
-            from matplotlib.backends.backend_pdf import PdfPages
-            from matplotlib.figure import Figure
-            from matplotlib.backends.backend_agg import FigureCanvasAgg
-            p = _path(path)
-            with PdfPages(p) as pdf:
-                for kind in ("summary", "d_dist", "confusion", "overlay"):
-                    png = figmod.render(kind, self._rows, self._gt, self._tools, 1000, 720)
-                    img = QImage.fromData(png, "PNG")
-                    fig = Figure(figsize=(10, 7.2)); FigureCanvasAgg(fig)
-                    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
-                    import io as _io
-                    import matplotlib.image as mpimg
-                    ax.imshow(mpimg.imread(_io.BytesIO(png), format="png"))
-                    pdf.savefig(fig)
+            if not self._rows or self._gt is None:
+                raise RuntimeError("Score the methods before exporting.")
+            figmod.export_pdf(self._rows, self._gt, self._tools, _path(path))
         except Exception as e:
             traceback.print_exc()
             self._fail("PDF export failed", e)

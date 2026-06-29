@@ -200,3 +200,20 @@ _RENDERERS = {
 def render(kind, rows, sim, tools, w, h) -> bytes:
     fn = _RENDERERS.get(kind, render_summary)
     return fn(rows, sim, tools, w, h)
+
+
+def export_pdf(rows, sim, tools, path) -> str:
+    """One-page-per-panel PDF of the whole comparison (pure; no Qt)."""
+    import matplotlib.image as mpimg
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    with PdfPages(path) as pdf:
+        for kind in ("summary", "d_dist", "confusion", "overlay"):
+            png = render(kind, rows, sim, tools, 1000, 720)
+            fig = Figure(figsize=(10, 7.2)); FigureCanvasAgg(fig)
+            fig.patch.set_facecolor(_BG)
+            ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+            ax.imshow(mpimg.imread(_io.BytesIO(png), format="png"))
+            pdf.savefig(fig, facecolor=_BG)
+    return path
