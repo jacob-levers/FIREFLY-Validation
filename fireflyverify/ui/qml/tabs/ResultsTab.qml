@@ -45,15 +45,16 @@ Rectangle {
 
     Flickable {
         anchors.fill: parent
-        anchors.margins: sc.sp8
         visible: Verify.hasResults
         contentWidth: width
-        contentHeight: col.implicitHeight
+        contentHeight: col.implicitHeight + sc.sp10 * 2
         clip: true
 
         ColumnLayout {
             id: col
-            width: parent.width
+            width: Math.min(1100, parent.width - sc.sp10 * 2)
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: sc.sp10
             spacing: sc.sp6
 
             // ── comparison table (Detection + Tracking) ───────────────────

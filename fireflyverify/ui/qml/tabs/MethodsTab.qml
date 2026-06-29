@@ -16,8 +16,9 @@ Rectangle {
     color: pal.BG
 
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: sc.sp8
+        width: Math.min(1040, parent.width - sc.sp10 * 2)
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
         spacing: sc.sp6
 
         Alert {
@@ -104,6 +105,5 @@ Rectangle {
                 }
             }
         }
-        Item { Layout.fillHeight: true }
     }
 }

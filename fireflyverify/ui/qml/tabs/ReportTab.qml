@@ -22,8 +22,10 @@ Rectangle {
     }
 
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: sc.sp8
+        width: Math.min(1000, parent.width - sc.sp10 * 2)
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: sc.sp12
         visible: Verify.hasResults
         spacing: sc.sp6
 

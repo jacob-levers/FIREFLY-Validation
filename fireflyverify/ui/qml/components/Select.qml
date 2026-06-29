@@ -24,6 +24,10 @@ ComboBox {
     onActivated: (i) => root.picked(textAt(i))
 
     contentItem: Item {
+        // give the custom content a real width so the ComboBox doesn't collapse
+        // to just the chevron when used outside a fill-width layout
+        implicitWidth: lbl.implicitWidth + root.indicator.width + sc.sp6
+                       + (root.pill ? cdot.width + sc.sp3 : 0)
         Rectangle {
             id: cdot
             visible: root.pill
@@ -32,6 +36,7 @@ ComboBox {
             color: root.dotColor
         }
         Text {
+            id: lbl
             anchors {
                 left: root.pill ? cdot.right : parent.left; leftMargin: sc.sp3
                 right: parent.right; rightMargin: root.indicator.width + sc.sp2
