@@ -21,7 +21,9 @@ QQuickStyle.setStyle("Basic")
 from fireflyverify import __version__
 from fireflyverify.ui.controllers.theme_controller import ThemeController
 from fireflyverify.ui.controllers.app_controller import AppController
+from fireflyverify.ui.controllers.verify_controller import VerifyController
 from fireflyverify.ui.controllers.providers.icon_provider import IconImageProvider
+from fireflyverify.ui.controllers.providers.figure_provider import FigureProvider
 
 # Resolve the QML tree in dev (next to this file) and in a frozen build.
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -36,15 +38,18 @@ def build_main_window(app: QtWidgets.QApplication):
     controllers are kept alive on the window so QML bindings stay valid."""
     theme = ThemeController()
     appc = AppController()
+    verify = VerifyController()
 
     win = QtWidgets.QMainWindow()
     win.setWindowTitle("FIREFLY · Verification")
 
     qw = QQuickWidget()
     qw.engine().addImageProvider("icon", IconImageProvider(_ICONS_DIR))
+    qw.engine().addImageProvider("figure", FigureProvider(verify.figure_image))
     ctx = qw.rootContext()
     ctx.setContextProperty("Theme", theme)
     ctx.setContextProperty("App", appc)
+    ctx.setContextProperty("Verify", verify)
     ctx.setContextProperty("appVersion", __version__)
     qw.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
     qw.setSource(QUrl.fromLocalFile(os.path.join(_QML_DIR, "Main.qml")))
@@ -53,7 +58,7 @@ def build_main_window(app: QtWidgets.QApplication):
 
     win.setCentralWidget(qw)
     win.resize(1180, 820)
-    win._ctx = (theme, appc, qw)
+    win._ctx = (theme, appc, verify, qw)
     return win, qw
 
 
