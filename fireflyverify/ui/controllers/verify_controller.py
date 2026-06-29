@@ -166,6 +166,23 @@ class VerifyController(QObject):
         if self._gt is None:
             return {"loaded": False}
         gt = self._gt
+        # Show the actual known diffusion coefficient(s) when the dataset carries
+        # them (the simulator does; imported CSV/XML usually don't).
+        pops = gt.meta.get("populations") or {}
+        Ds = []
+        for p in pops.values():
+            try:
+                Ds.append(float(p.get("D_um2_s")))
+            except (TypeError, ValueError):
+                pass
+        if not Ds:
+            truth_d, truth_d_unit = "", ""
+        elif len(Ds) == 1:
+            truth_d, truth_d_unit = f"{Ds[0]:g}", "µm²/s"
+        else:
+            lo, hi = min(Ds), max(Ds)
+            rng = f"{lo:g}" if lo == hi else f"{lo:g}–{hi:g}"
+            truth_d, truth_d_unit = f"{rng} µm²/s · {len(Ds)} classes", ""
         return {
             "loaded": True, "source": self._gt_source,
             "n_tracks": int(gt.gt_tracks["particle"].nunique()) if len(gt.gt_tracks) else 0,
@@ -173,7 +190,8 @@ class VerifyController(QObject):
             "n_frames": int(gt.meta.get("n_frames", (gt.gt_locs["frame"].max() + 1) if len(gt.gt_locs) else 0)),
             "pixel_size_um": float(gt.meta.get("pixel_size_um", 0.0)),
             "frame_interval_s": float(gt.meta.get("frame_interval_s", 0.0)),
-            "has_truth_D": bool(gt.meta.get("populations")),
+            "has_truth_D": bool(pops),
+            "truth_d": truth_d, "truth_d_unit": truth_d_unit,
         }
 
     # ── native pickers (keep the QML free of file dialogs) ────────────────

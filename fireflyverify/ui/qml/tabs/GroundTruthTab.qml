@@ -205,7 +205,9 @@ Rectangle {
                     MetricStat { Layout.fillWidth: true; label: "Localisations"; value: (root.gt.n_locs || 0) + "" }
                     MetricStat { Layout.fillWidth: true; label: "Frames"; value: (root.gt.n_frames || 0) + "" }
                     MetricStat { Layout.fillWidth: true; label: "Pixel size"; value: (root.gt.pixel_size_um || 0).toFixed(3); unit: "µm" }
-                    MetricStat { Layout.fillWidth: true; label: "Truth D"; value: root.gt.has_truth_D ? "known" : "—"
+                    MetricStat { Layout.fillWidth: true; label: "Truth D"
+                                 value: root.gt.has_truth_D ? (root.gt.truth_d || "—") : "—"
+                                 unit: root.gt.truth_d_unit || ""
                                  tone: root.gt.has_truth_D ? pal.SUCCESS : pal.TXT_MUTED }
                 }
             }
