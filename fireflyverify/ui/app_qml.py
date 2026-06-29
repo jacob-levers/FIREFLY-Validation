@@ -11,6 +11,7 @@ import sys
 
 from PySide6 import QtWidgets
 from PySide6.QtCore import QUrl
+from PySide6.QtGui import QIcon
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -28,9 +29,12 @@ from fireflyverify.ui.controllers.providers.figure_provider import FigureProvide
 # Resolve the QML tree in dev (next to this file) and in a frozen build.
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     _QML_DIR = os.path.join(sys._MEIPASS, "fireflyverify", "ui", "qml")
+    _ASSETS_DIR = os.path.join(sys._MEIPASS, "assets")
 else:
     _QML_DIR = os.path.join(os.path.dirname(__file__), "qml")
+    _ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets")
 _ICONS_DIR = os.path.join(_QML_DIR, "assets", "icons")
+_APP_ICON = os.path.join(_ASSETS_DIR, "icon.png")
 
 
 def build_main_window(app: QtWidgets.QApplication):
@@ -40,8 +44,14 @@ def build_main_window(app: QtWidgets.QApplication):
     appc = AppController()
     verify = VerifyController()
 
+    if os.path.isfile(_APP_ICON):
+        _ic = QIcon(_APP_ICON)
+        app.setWindowIcon(_ic)            # dock / taskbar (shared with FIREFLY)
+
     win = QtWidgets.QMainWindow()
     win.setWindowTitle("FIREFLY · Verification")
+    if os.path.isfile(_APP_ICON):
+        win.setWindowIcon(QIcon(_APP_ICON))
 
     qw = QQuickWidget()
     qw.engine().addImageProvider("icon", IconImageProvider(_ICONS_DIR))

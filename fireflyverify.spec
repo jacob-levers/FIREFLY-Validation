@@ -63,6 +63,11 @@ _qml_dir = os.path.join(SPECPATH, "fireflyverify", "ui", "qml")
 if os.path.isdir(_qml_dir):
     datas += [(_qml_dir, os.path.join("fireflyverify", "ui", "qml"))]
 
+# app icon (used at runtime for the window/dock; the .icns/.ico drive the bundle)
+_icon_png = os.path.join(SPECPATH, "assets", "icon.png")
+if os.path.isfile(_icon_png):
+    datas += [(_icon_png, "assets")]
+
 # version (kept in sync with fireflyverify/__init__.py, stamped by CI from the tag)
 _version = "0.1.0"
 try:
