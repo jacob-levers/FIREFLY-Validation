@@ -11,7 +11,6 @@ Rectangle {
     readonly property var sc: Theme.scale
     readonly property var cards: Verify.scorecards
     property string figKind: "summary"
-    property bool showGuide: false
     // a distinct amber for "Fair" so it doesn't read as the red "Poor"
     readonly property color fairC: "#e3b341"
     readonly property var bandColors: [pal.SUCCESS, pal.ACC, fairC, pal.DANGER]
@@ -266,39 +265,6 @@ Rectangle {
                                            font.pixelSize: sc.textSm; Layout.fillWidth: true }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            // ── "how to read these metrics" (collapsible) ─────────────────
-            Card {
-                Layout.fillWidth: true
-                implicitHeight: gCol.implicitHeight + sc.sp8
-                ColumnLayout {
-                    id: gCol
-                    x: sc.sp6; y: sc.sp4; width: parent.width - sc.sp6 * 2; spacing: sc.sp4
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Icon { name: "info"; size: 15; color: pal.ACC }
-                        Text { text: "How to read these metrics"; color: pal.TXT
-                               font.pixelSize: sc.textMd; font.weight: Font.Bold }
-                        Item { Layout.fillWidth: true }
-                        Icon { name: root.showGuide ? "chevron-down" : "chevron-right"
-                               size: 16; color: pal.TXT_MUTED }
-                        TapHandler { onTapped: root.showGuide = !root.showGuide }
-                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    }
-                    Repeater {
-                        model: root.showGuide ? root.detMetrics.concat(root.trkMetrics) : []
-                        delegate: ColumnLayout {
-                            required property var modelData
-                            Layout.fillWidth: true; spacing: 1
-                            Text { text: modelData.l; color: pal.ACC; font.pixelSize: sc.textSm
-                                   font.weight: Font.DemiBold }
-                            Text { text: modelData.d + "  ·  " + root.goodHint(modelData.dir)
-                                   color: pal.TXT_MUTED; font.pixelSize: sc.textXs
-                                   Layout.fillWidth: true; wrapMode: Text.WordWrap }
                         }
                     }
                 }
