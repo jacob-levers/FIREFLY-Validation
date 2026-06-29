@@ -134,14 +134,14 @@ Rectangle {
                             id: drow
                             required property var modelData
                             Layout.fillWidth: true
-                            // metric name + info tooltip
-                            RowLayout {
-                                Layout.preferredWidth: 210; spacing: sc.sp2
-                                Text { text: drow.modelData.l; color: pal.TXT; font.pixelSize: sc.textSm }
-                                Icon { name: "info"; size: 12; color: pal.TXT_MUTED
-                                    HoverHandler { id: ihd }
-                                    QQC.ToolTip.visible: ihd.hovered; QQC.ToolTip.delay: 200
-                                    QQC.ToolTip.text: drow.modelData.d + "  (" + root.goodHint(drow.modelData.dir) + ")" }
+                            // metric name — hover it for the explanation
+                            Text {
+                                Layout.preferredWidth: 210
+                                text: drow.modelData.l; font.pixelSize: sc.textSm
+                                color: lblHovD.hovered ? pal.ACC : pal.TXT
+                                HoverHandler { id: lblHovD; cursorShape: Qt.PointingHandCursor }
+                                QQC.ToolTip.visible: lblHovD.hovered; QQC.ToolTip.delay: 200
+                                QQC.ToolTip.text: drow.modelData.d + "  (" + root.goodHint(drow.modelData.dir) + ")"
                             }
                             // one rated value per tool
                             Repeater { model: root.cards
@@ -173,13 +173,13 @@ Rectangle {
                             id: trow
                             required property var modelData
                             Layout.fillWidth: true
-                            RowLayout {
-                                Layout.preferredWidth: 210; spacing: sc.sp2
-                                Text { text: trow.modelData.l; color: pal.TXT; font.pixelSize: sc.textSm }
-                                Icon { name: "info"; size: 12; color: pal.TXT_MUTED
-                                    HoverHandler { id: iht }
-                                    QQC.ToolTip.visible: iht.hovered; QQC.ToolTip.delay: 200
-                                    QQC.ToolTip.text: trow.modelData.d + "  (" + root.goodHint(trow.modelData.dir) + ")" }
+                            Text {
+                                Layout.preferredWidth: 210
+                                text: trow.modelData.l; font.pixelSize: sc.textSm
+                                color: lblHovT.hovered ? pal.ACC : pal.TXT
+                                HoverHandler { id: lblHovT; cursorShape: Qt.PointingHandCursor }
+                                QQC.ToolTip.visible: lblHovT.hovered; QQC.ToolTip.delay: 200
+                                QQC.ToolTip.text: trow.modelData.d + "  (" + root.goodHint(trow.modelData.dir) + ")"
                             }
                             Repeater { model: root.cards
                                 delegate: Item {
@@ -216,7 +216,7 @@ Rectangle {
                                 Text { text: modelData.t; color: pal.TXT_MUTED; font.pixelSize: sc.textXs } }
                         }
                         Item { Layout.fillWidth: true }
-                        Text { text: "hover a value or the ⓘ for details"
+                        Text { text: "hover a metric name or value for details"
                                color: pal.TXT_MUTED; font.pixelSize: sc.textXs }
                     }
                 }
@@ -229,15 +229,13 @@ Rectangle {
                 ColumnLayout {
                     id: difCol
                     x: sc.sp6; y: sc.sp5; width: parent.width - sc.sp6 * 2; spacing: sc.sp4
-                    RowLayout { spacing: sc.sp2
-                        Text { text: "DIFFUSION RECOVERY (D µm²/s)"; color: pal.TXT_MUTED
-                               font.pixelSize: sc.textXs; font.weight: Font.Bold; font.letterSpacing: 1.5 }
-                        Icon { name: "info"; size: 12; color: pal.TXT_MUTED
-                            HoverHandler { id: dh }
-                            QQC.ToolTip.visible: dh.hovered; QQC.ToolTip.delay: 200
-                            QQC.ToolTip.text: "Recovered diffusion coefficient D vs the known truth, per motion class. "
-                                            + "bias% = (recovered − true) / true; closer to 0 is better (green < 15%)." }
-                    }
+                    Text { text: "DIFFUSION RECOVERY (D µm²/s)"
+                           color: dhh.hovered ? pal.TXT : pal.TXT_MUTED
+                           font.pixelSize: sc.textXs; font.weight: Font.Bold; font.letterSpacing: 1.5
+                           HoverHandler { id: dhh; cursorShape: Qt.PointingHandCursor }
+                           QQC.ToolTip.visible: dhh.hovered; QQC.ToolTip.delay: 200
+                           QQC.ToolTip.text: "Recovered diffusion coefficient D vs the known truth, per motion class. "
+                                           + "bias% = (recovered − true) / true; closer to 0 is better (green < 15%)." }
                     Repeater {
                         model: root.cards
                         delegate: ColumnLayout {
