@@ -12,6 +12,13 @@ Rectangle {
     readonly property var cards: Verify.scorecards
     property string figKind: "summary"
     property bool showGuide: false
+    // a distinct amber for "Fair" so it doesn't read as the red "Poor"
+    readonly property color fairC: "#e3b341"
+    readonly property var bandColors: [pal.SUCCESS, pal.ACC, fairC, pal.DANGER]
+    readonly property var bandWords: ["Excellent", "Good", "Fair", "Poor"]
+    readonly property var figKinds: [
+        { k: "summary", t: "Summary" }, { k: "d_dist", t: "D distribution" },
+        { k: "confusion", t: "Confusion" }, { k: "overlay", t: "Track overlay" }]
 
     // metric definitions: key, label, direction (up=higher better, down=lower
     // better, none=neutral count), and a plain-English explanation.
@@ -48,31 +55,27 @@ Rectangle {
         for (var i = 0; i < all.length; i++) if (all[i].k === key) return all[i].dir
         return "up"
     }
+    // ONE source of truth for the rating → colour, word, and tooltip all agree.
+    function band(key, v) {
+        if (v === null || v === undefined) return -1
+        var dir = dirOf(key)
+        if (dir === "none") return -1
+        if (dir === "down") return v <= 15 ? 0 : v <= 30 ? 1 : v <= 60 ? 2 : 3
+        return v >= 0.90 ? 0 : v >= 0.75 ? 1 : v >= 0.50 ? 2 : 3
+    }
     function rateColor(key, v) {
         if (v === null || v === undefined) return pal.TXT_MUTED
-        var dir = dirOf(key)
-        if (dir === "none") return pal.TXT
-        if (dir === "down") {
-            if (v <= 15) return pal.SUCCESS
-            if (v <= 30) return pal.ACC
-            if (v <= 60) return pal.WARN
-            return pal.DANGER
-        }
-        if (v >= 0.90) return pal.SUCCESS
-        if (v >= 0.75) return pal.ACC
-        if (v >= 0.50) return pal.WARN
-        return pal.DANGER
+        if (dirOf(key) === "none") return pal.TXT
+        return bandColors[band(key, v)]
     }
     function rateWord(key, v) {
-        if (v === null || v === undefined || dirOf(key) === "none") return ""
-        var c = "" + rateColor(key, v)
-        return c === "" + pal.SUCCESS ? "Excellent" : c === "" + pal.ACC ? "Good"
-             : c === "" + pal.WARN ? "Fair" : "Poor"
+        var b = band(key, v)
+        return b < 0 ? "" : bandWords[b]
     }
     function goodHint(dir) {
-        return dir === "down" ? "lower is better (≤30 nm good, ≤15 excellent)"
-             : dir === "none" ? "a count — compare the two tools"
-             : "0–1, higher is better (≥0.75 good, ≥0.90 excellent)"
+        if (dir === "down") return "lower is better — excellent ≤15, good ≤30, fair ≤60, poor >60 nm"
+        if (dir === "none") return "a count — compare the two tools"
+        return "0–1, higher is better — excellent ≥0.90, good ≥0.75, fair ≥0.50, poor <0.50"
     }
     function refreshFig() { Verify.renderFigure(figKind, figImg.width, figImg.height) }
     onFigKindChanged: refreshFig()
@@ -209,7 +212,7 @@ Rectangle {
                         Text { text: "Score:"; color: pal.TXT_MUTED; font.pixelSize: sc.textXs }
                         Repeater {
                             model: [{ t: "Excellent", c: pal.SUCCESS }, { t: "Good", c: pal.ACC },
-                                    { t: "Fair", c: pal.WARN }, { t: "Poor", c: pal.DANGER }]
+                                    { t: "Fair", c: root.fairC }, { t: "Poor", c: pal.DANGER }]
                             delegate: RowLayout { required property var modelData; spacing: sc.sp2
                                 Rectangle { width: 8; height: 8; radius: 4; color: modelData.c
                                             Layout.alignment: Qt.AlignVCenter }
@@ -259,7 +262,7 @@ Rectangle {
                                     Text { text: (modelData.bias_pct !== null ? (modelData.bias_pct >= 0 ? "+" : "") + modelData.bias_pct.toFixed(1) + "% bias" : "")
                                            color: modelData.bias_pct === null ? pal.TXT_MUTED
                                                 : Math.abs(modelData.bias_pct) < 15 ? pal.SUCCESS
-                                                : Math.abs(modelData.bias_pct) < 30 ? pal.WARN : pal.DANGER
+                                                : Math.abs(modelData.bias_pct) < 30 ? root.fairC : pal.DANGER
                                            font.pixelSize: sc.textSm; Layout.fillWidth: true }
                                 }
                             }
@@ -310,8 +313,26 @@ Rectangle {
                     RowLayout { spacing: sc.sp3
                         Text { text: "Figure"; color: pal.TXT; font.pixelSize: sc.textMd; font.weight: Font.Bold }
                         Item { Layout.fillWidth: true }
-                        Select { model: ["summary", "d_dist", "confusion", "overlay"]
-                                 onPicked: (t) => root.figKind = t }
+                        Row {
+                            spacing: sc.sp2
+                            Repeater {
+                                model: root.figKinds
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property bool on: root.figKind === modelData.k
+                                    implicitWidth: fkl.implicitWidth + sc.sp5 * 2
+                                    implicitHeight: 26
+                                    radius: sc.radiusMd
+                                    color: on ? pal.PANEL_ALT : "transparent"
+                                    border.width: 1; border.color: on ? pal.ACC : pal.BORDER
+                                    Text { id: fkl; anchors.centerIn: parent; text: modelData.t
+                                           color: on ? pal.ACC : pal.TXT_MUTED; font.pixelSize: sc.textXs
+                                           font.weight: on ? Font.DemiBold : Font.Normal }
+                                    TapHandler { onTapped: root.figKind = modelData.k }
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                }
+                            }
+                        }
                     }
                     Text { text: root.figCaptions[root.figKind] || ""
                            color: pal.TXT_MUTED; font.pixelSize: sc.textXs
