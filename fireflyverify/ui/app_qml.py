@@ -37,6 +37,24 @@ _ICONS_DIR = os.path.join(_QML_DIR, "assets", "icons")
 _APP_ICON = os.path.join(_ASSETS_DIR, "icon.png")
 
 
+def _log(msg):
+    """Best-effort diagnostics → $VERIFY_LOG + stderr. Frozen *windowed* builds
+    have sys.stderr = None, so a bare print(file=sys.stderr) would itself raise —
+    guard it."""
+    path = os.environ.get("VERIFY_LOG")
+    if path:
+        try:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(str(msg) + "\n")
+        except Exception:
+            pass
+    try:
+        if sys.stderr is not None:
+            print(str(msg), file=sys.stderr)
+    except Exception:
+        pass
+
+
 def build_main_window(app: QtWidgets.QApplication):
     """Construct the QML shell hosted in a QMainWindow. Returns (window, qw);
     controllers are kept alive on the window so QML bindings stay valid."""
@@ -63,8 +81,9 @@ def build_main_window(app: QtWidgets.QApplication):
     ctx.setContextProperty("appVersion", __version__)
     qw.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
     qw.setSource(QUrl.fromLocalFile(os.path.join(_QML_DIR, "Main.qml")))
-    for e in qw.errors():
-        print(f"[VERIFY-QML] {e.toString()}", file=sys.stderr)
+    errs = [e.toString() for e in qw.errors()]
+    if errs:
+        _log("[VERIFY-QML] QML load errors:\n" + "\n".join(errs))
 
     win.setCentralWidget(qw)
     win.resize(1180, 820)
@@ -73,11 +92,16 @@ def build_main_window(app: QtWidgets.QApplication):
 
 
 def main() -> int:
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("FIREFLY-VERIFICATION")
-    app.setOrganizationName("jacoblevers")
-    win, qw = build_main_window(app)
-    win.show()
+    try:
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        app.setApplicationName("FIREFLY-VERIFICATION")
+        app.setOrganizationName("jacoblevers")
+        win, qw = build_main_window(app)
+        win.show()
+    except Exception:
+        import traceback
+        _log("[VERIFY-FATAL] build_main_window failed:\n" + traceback.format_exc())
+        raise
 
     marker_path = os.environ.get("VERIFY_READY_MARKER")
     if marker_path:

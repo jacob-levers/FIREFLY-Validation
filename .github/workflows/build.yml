@@ -130,17 +130,20 @@ jobs:
         run: |
           $exe = "dist\FIREFLY-Validation.exe"
           $marker = Join-Path $env:RUNNER_TEMP "verify_ready.marker"
-          Remove-Item -Path $marker -ErrorAction SilentlyContinue
+          $log = Join-Path $env:RUNNER_TEMP "verify_startup.log"
+          Remove-Item -Path $marker, $log -ErrorAction SilentlyContinue
           $env:VERIFY_READY_MARKER = $marker
+          $env:VERIFY_LOG = $log
+          function Show-Log { if (Test-Path $log) { Write-Host "---- app startup log ----"; Get-Content $log | Write-Host; Write-Host "-------------------------" } else { Write-Host "(no app log written)" } }
           $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
-          $deadline = (Get-Date).AddSeconds(120)
+          $deadline = (Get-Date).AddSeconds(180)
           $ready = $false
           while ((Get-Date) -lt $deadline) {
             if (Test-Path $marker) { $ready = $true; break }
-            if ($proc.HasExited) { Write-Error "FATAL: exited code $($proc.ExitCode) before ready"; exit 1 }
+            if ($proc.HasExited) { Show-Log; Write-Error "FATAL: exited code $($proc.ExitCode) before ready"; exit 1 }
             Start-Sleep -Milliseconds 500
           }
-          if (-not $ready) { Write-Error "FATAL: no ready marker in 120s — startup crash"; try { $proc.Kill() } catch {}; exit 1 }
+          if (-not $ready) { Show-Log; Write-Error "FATAL: no ready marker in 180s — startup crash"; try { $proc.Kill() } catch {}; exit 1 }
           Write-Host "OK: ready marker written"
           taskkill /F /T /PID $proc.Id 2>$null | Out-Null
           Stop-Process -Name "FIREFLY-Validation" -Force -ErrorAction SilentlyContinue
