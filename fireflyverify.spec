@@ -27,6 +27,27 @@ hidden += _no_tests("numpy")
 hidden += _no_tests("pandas")
 hidden += _no_tests("scipy")
 hidden += _no_tests("matplotlib")
+
+# scipy >=1.16 moved array_api_compat under scipy._external, and
+# collect_submodules("scipy") does NOT recurse into it — so
+# scipy._external.array_api_compat.numpy.fft (pulled in transitively by
+# scipy.special <- scipy.linalg <- our `from scipy.special import erf`) is absent
+# from the bundle and the frozen app dies on first import with
+# ModuleNotFoundError. Collect the vendored subtrees explicitly.
+for _vendored in (
+    # scipy >=1.16 layout (array_api_compat under scipy._external)
+    "scipy._external.array_api_compat",
+    "scipy._external.array_api_extra",
+    "scipy._external._array_api_compat_vendor",
+    "scipy._external.packaging_version",
+    # alternate layout used by some scipy versions (under scipy._lib)
+    "scipy._lib.array_api_compat",
+    "scipy._lib.array_api_extra",
+):
+    try:
+        hidden += collect_submodules(_vendored)
+    except Exception:
+        pass
 hidden += collect_submodules("PySide6")
 hidden += collect_submodules("shiboken6")
 hidden += collect_submodules("fireflyverify")

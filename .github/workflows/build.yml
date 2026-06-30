@@ -47,6 +47,22 @@ jobs:
       - name: Build .app
         run: pyinstaller fireflyverify.spec --noconfirm --clean
 
+      - name: Smoke test the .app
+        run: |
+          APP="dist/FIREFLY-Validation.app/Contents/MacOS/FIREFLY-Validation"
+          MARK="$RUNNER_TEMP/verify_ready.marker"; LOG="$RUNNER_TEMP/verify_startup.log"
+          rm -f "$MARK" "$LOG"
+          QT_QPA_PLATFORM=offscreen VERIFY_READY_MARKER="$MARK" VERIFY_LOG="$LOG" "$APP" >/dev/null 2>&1 &
+          PID=$!
+          for i in $(seq 1 120); do [ -f "$MARK" ] && break; sleep 1; done
+          if [ ! -f "$MARK" ]; then
+            echo "---- app startup log ----"; cat "$LOG" 2>/dev/null || echo "(no log written)"
+            echo "-------------------------"
+            echo "FATAL: .app did not signal ready — startup crash"
+            kill $PID 2>/dev/null || true; exit 1
+          fi
+          echo "OK: .app started"; kill $PID 2>/dev/null || true
+
       - name: Create DMG
         run: |
           for vol in /Volumes/FIREFLY-Validation*; do
