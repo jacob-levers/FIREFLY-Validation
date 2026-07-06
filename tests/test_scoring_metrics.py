@@ -93,3 +93,40 @@ def test_crlb_decreases_with_more_photons():
     a = crlb_sigma_nm(200, 5, 0.9, 0.1)
     b = crlb_sigma_nm(2000, 5, 0.9, 0.1)
     assert b < a and np.isfinite(a) and np.isfinite(b)
+
+
+def _empty_locs():
+    return pd.DataFrame({"frame": [], "x": [], "y": []})
+
+
+def test_detection_no_data_is_nan_not_zero():
+    """No estimates AND no ground truth → every detection metric is UNDEFINED, so
+    NaN (not the old silent 0.0 that read like a real, perfect-miss score)."""
+    m = detection_metrics(_empty_locs(), _empty_locs(), tol_px=2.0, pixel_size_um=0.1)
+    for k in ("precision", "recall", "f1", "jaccard"):
+        assert np.isnan(m[k]), f"{k} should be NaN when undefined, got {m[k]}"
+
+
+def test_detection_tool_found_nothing_recall_zero_precision_nan():
+    """GT exists but the tool produced nothing: recall is a real 0.0 (found none
+    of the truth), precision is undefined (no predictions) → NaN."""
+    gt = pd.DataFrame({"frame": [0, 0], "x": [10., 20.], "y": [10., 20.]})
+    m = detection_metrics(_empty_locs(), gt, tol_px=2.0, pixel_size_um=0.1)
+    assert m["recall"] == 0.0            # defined zero: none of 2 GT recovered
+    assert np.isnan(m["precision"])      # undefined: no estimates at all
+    assert m["jaccard"] == 0.0           # defined: fn>0, tp=fp=0
+    assert np.isnan(m["f1"])             # undefined because precision is
+
+
+def test_diffusion_bias_finite_for_immobile_population():
+    """D_true≈0 (immobile) makes the relative bias blow up to ±inf; the metric
+    must stay finite/NaN, never report inf."""
+    gt = _tracks([1, 2])
+    gt["population"] = "immobile"
+    diff = pd.DataFrame({"particle": [1, 2], "D": [0.001, 0.002],
+                         "alpha": [0.3, 0.4], "motion": ["Immobile", "Immobile"]})
+    meta = {"populations": {"immobile": {"D_um2_s": 0.0}}}
+    rec = diffusion_recovery(diff, gt, [(1, 1), (2, 2)], meta)
+    bias = rec["per_population"]["immobile"]["D_bias_pct"]
+    assert not np.isinf(bias)            # was +inf before the finite-filter fix
+    assert np.isnan(bias)                # undefined against a zero-D truth

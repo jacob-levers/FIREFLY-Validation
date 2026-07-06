@@ -59,3 +59,21 @@ def test_csv_nm_units_converted(tmp_path):
     # 1060 nm / 106 nm/px = 10 px
     assert np.allclose(g.gt_tracks["x"].tolist(), [10.0, 20.0])
     assert np.allclose(g.gt_tracks["y"].tolist(), [20.0, 30.0])
+
+
+def test_meta_surfaces_frame_offset_and_pixel_source(tmp_path):
+    """A silent 'auto' frame shift and a defaulted-vs-given pixel size must be
+    visible in meta so the UI/report can surface (not hide) them."""
+    # 1-based frames, auto-detected → applied offset is -1; pixel size omitted → default.
+    csv = "particle,frame,x,y\n7,1,1,1\n7,2,2,2\n7,3,3,3\n"
+    p = tmp_path / "auto.csv"; p.write_text(csv)
+    g = load_ground_truth(str(p), frame_base="auto")
+    assert g.gt_tracks["frame"].tolist() == [0, 1, 2]
+    assert g.meta["frame_offset"] == -1
+    assert g.meta["pixel_size_source"] == "default"
+    assert g.meta["photon_budget_assumed"] is True
+
+    # explicit 0-based + given pixel size → no shift, source 'given'
+    g2 = load_ground_truth(str(p), pixel_size_um=0.1, frame_base="0")
+    assert g2.meta["frame_offset"] == 0
+    assert g2.meta["pixel_size_source"] == "given"

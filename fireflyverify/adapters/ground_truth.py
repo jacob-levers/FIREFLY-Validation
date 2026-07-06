@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from fireflyverify.adapters.common import DEFAULT_DT_S, DEFAULT_PX_UM
+from fireflyverify.constants import default_psf_sigma_px
 from fireflyverify.scoring.simulator import SimResult
 
 _PARTICLE_ALIASES = {"particle", "track", "trackid", "track_id", "trajectory",
@@ -47,20 +48,26 @@ def _resolve_frame_offset(frame: np.ndarray, frame_base) -> int:
     return -int(frame.min()) if len(frame) else 0          # "auto"
 
 
-def _meta(pixel_size_um, frame_interval_s):
-    px = float(pixel_size_um) if pixel_size_um else DEFAULT_PX_UM
+def _meta(pixel_size_um, frame_interval_s, frame_offset=0):
+    given = bool(pixel_size_um)
+    px = float(pixel_size_um) if given else DEFAULT_PX_UM
     return {
         "pixel_size_um": px,
+        "pixel_size_source": "given" if given else "default",
         "frame_interval_s": float(frame_interval_s or DEFAULT_DT_S),
-        "psf_sigma_px": max(0.5, (0.21 * 660.0 / 1.4) / (px * 1000.0)),
+        "frame_offset": int(frame_offset),                 # applied shift (see below)
+        "psf_sigma_px": default_psf_sigma_px(px),
+        # No photon budget accompanies imported GT — these are placeholders, so
+        # the CRLB reference floor is only indicative (flagged for the UI/report).
         "photons_per_emitter": 500.0,
         "bg_photons": 1.0,
+        "photon_budget_assumed": True,
         "populations": {},                                 # unknown for imported GT
     }
 
 
 def _finish(particle, frame, x, y, *, pixel_size_um, frame_interval_s,
-            stack_path=None):
+            stack_path=None, frame_offset=0):
     gt_tracks = pd.DataFrame({
         "frame": np.asarray(frame, dtype=int),
         "x": np.asarray(x, dtype=float),
@@ -80,7 +87,7 @@ def _finish(particle, frame, x, y, *, pixel_size_um, frame_interval_s,
         except Exception:
             stack = None
     return SimResult(stack=stack, gt_locs=gt_locs, gt_tracks=gt_tracks,
-                     meta=_meta(pixel_size_um, frame_interval_s))
+                     meta=_meta(pixel_size_um, frame_interval_s, frame_offset))
 
 
 def _load_csv(path, *, pixel_size_um, frame_interval_s, frame_base, stack_path):
@@ -101,7 +108,8 @@ def _load_csv(path, *, pixel_size_um, frame_interval_s, frame_base, stack_path):
             raise ValueError(
                 f"Ground-truth CSV missing a '{need}' column; got {list(df.columns)}")
     frame = df[canon["frame"]].to_numpy(float).astype(int)
-    frame = frame + _resolve_frame_offset(frame, frame_base)
+    offset = _resolve_frame_offset(frame, frame_base)
+    frame = frame + offset
     x = df[canon["x"]].to_numpy(float)
     y = df[canon["y"]].to_numpy(float)
     if _is_nm(canon["x"]):
@@ -110,7 +118,7 @@ def _load_csv(path, *, pixel_size_um, frame_interval_s, frame_base, stack_path):
         y = y / px_nm
     return _finish(df[canon["particle"]].to_numpy(), frame, x, y,
                    pixel_size_um=pixel_size_um, frame_interval_s=frame_interval_s,
-                   stack_path=stack_path)
+                   stack_path=stack_path, frame_offset=offset)
 
 
 def _load_isbi_xml(path, *, pixel_size_um, frame_interval_s, stack_path):

@@ -10,6 +10,7 @@ Rectangle {
     readonly property var pal: Theme.palette
     readonly property var sc: Theme.scale
     readonly property var cards: Verify.scorecards
+    readonly property var prov: Verify.scoreProvenance   // scoring conditions (auditable)
     property string figKind: "summary"
     // a distinct amber for "Fair" so it doesn't read as the red "Poor"
     readonly property color fairC: "#e3b341"
@@ -221,6 +222,26 @@ Rectangle {
                         Text { text: "hover a metric name or value for details"
                                color: pal.TXT_MUTED; font.pixelSize: sc.textXs }
                     }
+
+                    // ── scoring provenance — the conditions these numbers were
+                    //    computed under, so the scores are auditable/reproducible.
+                    Text {
+                        visible: root.prov && root.prov.has === true
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        color: pal.TXT_MUTED; font.pixelSize: sc.textXs
+                        text: "Scored at " + (root.prov.pixel_size_um || 0).toFixed(3)
+                              + " µm/px · detection tolerance " + Math.round(root.prov.match_tol_nm || 0)
+                              + " nm · tracking gate " + Math.round(root.prov.track_gate_nm || 0) + " nm"
+                              + (root.prov.frame_offset ? " · frame offset " + root.prov.frame_offset : "")
+                    }
+                    Text {
+                        visible: root.prov && root.prov.has === true
+                                 && (root.prov.pixel_size_inferred === true || root.prov.photon_budget_assumed === true)
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        color: root.fairC; font.pixelSize: sc.textXs
+                        text: (root.prov.pixel_size_inferred ? "Pixel size was inferred from the field extent — pass the dataset's true value for correct nm scaling. " : "")
+                              + (root.prov.photon_budget_assumed ? "CRLB floor uses an assumed photon budget (imported GT) — treat it as indicative only." : "")
+                    }
                 }
             }
 
@@ -245,6 +266,11 @@ Rectangle {
                             Layout.fillWidth: true; spacing: sc.sp2
                             Text { text: modelData.tool; color: pal.ACC; font.pixelSize: sc.textSm
                                    font.weight: Font.Bold }
+                            // Per-track MSD-fit outcomes (common re-fit only) — so a
+                            // NaN D is never mistaken for a silent solver failure.
+                            Text { visible: modelData.fit_status && modelData.fit_status.length > 0
+                                   text: "MSD fits: " + modelData.fit_status
+                                   color: pal.TXT_MUTED; font.pixelSize: sc.textXs }
                             Text { visible: !modelData.diffusion || modelData.diffusion.length === 0
                                    text: "no reported D — enable common re-fit on the Methods tab"
                                    color: pal.TXT_MUTED; font.pixelSize: sc.textXs }

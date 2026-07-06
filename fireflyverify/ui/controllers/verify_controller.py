@@ -17,10 +17,12 @@ from PySide6.QtGui import QImage
 from fireflyverify.adapters.firefly_output import load_firefly_output
 from fireflyverify.adapters.ground_truth import load_ground_truth
 from fireflyverify.adapters.palmtracer_output import load_palmtracer_output
+from fireflyverify.constants import DEFAULT_DT_S, DEFAULT_PX_UM
 from fireflyverify.scoring import figures as figmod
 from fireflyverify.scoring import io as scoring_io
 from fireflyverify.scoring.config import DiffusionPopulation, SimConfig
-from fireflyverify.scoring.msdfit import compute_diff_from_tracks
+from fireflyverify.scoring.msdfit import (compute_diff_from_tracks,
+                                          summarize_fit_status)
 from fireflyverify.scoring.report import build_report_table, evaluate
 from fireflyverify.scoring.simulator import simulate
 
@@ -41,6 +43,20 @@ def _f(x):
         return None
 
 
+_FIT_STATUS_LABELS = {"ok": "fit", "immobile": "immobile",
+                      "linear_fallback": "linear fallback", "failed": "failed",
+                      "too_short": "too short"}
+
+
+def _fit_status_text(counts: dict) -> str:
+    """"312 fit · 40 immobile · 5 failed" from a {status: count} map (common
+    re-fit only). Empty → "" so the UI can hide the line."""
+    if not counts:
+        return ""
+    return " · ".join(f"{counts[k]} {_FIT_STATUS_LABELS.get(k, k)}"
+                      for k in _FIT_STATUS_LABELS if counts.get(k))
+
+
 class VerifyController(QObject):
     groundTruthChanged = Signal()
     methodsChanged = Signal()
@@ -58,8 +74,9 @@ class VerifyController(QObject):
         self._figures = {}                # kind -> QImage
         self._fig_token = 0
         self._busy = False
+        self._fit_status = {}             # name -> {status: count} from common re-fit
         self._imp_px = 0.0                 # import calibration (0 → default/auto)
-        self._imp_dt = 0.02
+        self._imp_dt = DEFAULT_DT_S
         self._imp_base = "auto"            # frame indexing: auto | 0 | 1
 
     # ── busy ──────────────────────────────────────────────────────────────
@@ -78,12 +95,13 @@ class VerifyController(QObject):
     # ── ground truth ──────────────────────────────────────────────────────
     @Slot(str)
     @Slot(str, float, float, str)
-    def importGroundTruthCsv(self, path, pixel_size_um=0.0, frame_interval_s=0.02,
-                             frame_base="auto"):
+    def importGroundTruthCsv(self, path, pixel_size_um=0.0,
+                             frame_interval_s=DEFAULT_DT_S, frame_base="auto"):
         try:
             self._gt = load_ground_truth(
                 _path(path), pixel_size_um=(pixel_size_um or None),
-                frame_interval_s=(frame_interval_s or 0.02), frame_base=frame_base)
+                frame_interval_s=(frame_interval_s or DEFAULT_DT_S),
+                frame_base=frame_base)
             self._gt_source = "CSV: " + os.path.basename(_path(path))
             self._after_gt()
         except Exception as e:
@@ -92,11 +110,11 @@ class VerifyController(QObject):
     @Slot(str)
     @Slot(str, str, float, float)
     def importGroundTruthXml(self, path, stack_path="", pixel_size_um=0.0,
-                             frame_interval_s=0.02):
+                             frame_interval_s=DEFAULT_DT_S):
         try:
             self._gt = load_ground_truth(
                 _path(path), pixel_size_um=(pixel_size_um or None),
-                frame_interval_s=(frame_interval_s or 0.02),
+                frame_interval_s=(frame_interval_s or DEFAULT_DT_S),
                 stack_path=(_path(stack_path) or None))
             self._gt_source = "ISBI XML: " + os.path.basename(_path(path))
             self._after_gt()
@@ -183,15 +201,22 @@ class VerifyController(QObject):
             lo, hi = min(Ds), max(Ds)
             rng = f"{lo:g}" if lo == hi else f"{lo:g}–{hi:g}"
             truth_d, truth_d_unit = f"{rng} µm²/s · {len(Ds)} classes", ""
+        meta = gt.meta
         return {
             "loaded": True, "source": self._gt_source,
             "n_tracks": int(gt.gt_tracks["particle"].nunique()) if len(gt.gt_tracks) else 0,
             "n_locs": int(len(gt.gt_locs)),
-            "n_frames": int(gt.meta.get("n_frames", (gt.gt_locs["frame"].max() + 1) if len(gt.gt_locs) else 0)),
-            "pixel_size_um": float(gt.meta.get("pixel_size_um", 0.0)),
-            "frame_interval_s": float(gt.meta.get("frame_interval_s", 0.0)),
+            "n_frames": int(meta.get("n_frames", (gt.gt_locs["frame"].max() + 1) if len(gt.gt_locs) else 0)),
+            "pixel_size_um": float(meta.get("pixel_size_um", 0.0)),
+            "frame_interval_s": float(meta.get("frame_interval_s", 0.0)),
             "has_truth_D": bool(pops),
             "truth_d": truth_d, "truth_d_unit": truth_d_unit,
+            # scoring provenance — the conditions this GT was resolved under, so a
+            # silent frame shift / defaulted-or-inferred pixel size is visible.
+            "frame_offset": int(meta.get("frame_offset", 0)),
+            "pixel_size_source": str(meta.get("pixel_size_source", "given")),
+            "pixel_size_inferred": bool(meta.get("pixel_size_inferred", False)),
+            "photon_budget_assumed": bool(meta.get("photon_budget_assumed", False)),
         }
 
     # ── native pickers (keep the QML free of file dialogs) ────────────────
@@ -201,7 +226,7 @@ class VerifyController(QObject):
 
     @Slot(float)
     def setImportFrameInterval(self, v):
-        self._imp_dt = float(v or 0.02)
+        self._imp_dt = float(v or DEFAULT_DT_S)
 
     @Slot(str)
     def setImportFrameBase(self, v):
@@ -303,17 +328,20 @@ class VerifyController(QObject):
             return
         self._set_busy(True)
         try:
-            px = self._gt.meta.get("pixel_size_um", 0.106)
-            dt = self._gt.meta.get("frame_interval_s", 0.02)
+            px = self._gt.meta.get("pixel_size_um", DEFAULT_PX_UM)
+            dt = self._gt.meta.get("frame_interval_s", DEFAULT_DT_S)
             rows = []
+            fit_status = {}
             for name in ("FIREFLY", "palmTRACER"):
                 t = self._tools.get(name)
                 if t is None:
                     continue
                 if common_refit:
                     t.diff = compute_diff_from_tracks(t.tracks, px, dt)
+                    fit_status[name] = summarize_fit_status(t.diff)
                 rows.append(evaluate(t, self._gt))
             self._rows = rows
+            self._fit_status = fit_status
             self._figures = {}
             self.resultsChanged.emit()
             self.renderFigure("summary", 900, 640)
@@ -342,12 +370,32 @@ class VerifyController(QObject):
                 "jsc": _f(r["jsc"]), "jsc_theta": _f(r["jsc_theta"]),
                 "track_rmse_nm": _f(r["isbi_rmse_nm"]), "n_tracks": int(r["n_tracks"]),
                 "diffusion": diff_rows,
+                "fit_status": _fit_status_text(self._fit_status.get(r["tool"], {})),
             })
         return cards
 
     @Property(bool, notify=resultsChanged)
     def hasResults(self):
         return bool(self._rows)
+
+    @Property("QVariantMap", notify=resultsChanged)
+    def scoreProvenance(self):
+        """The conditions the scores were computed under (matching tolerance /
+        tracking gate, resolved pixel size, frame offset), so the numbers are
+        auditable in the UI — mirrors what the CSV/PDF report carries."""
+        if not self._rows:
+            return {"has": False}
+        p = self._rows[0].get("_provenance", {})
+        return {
+            "has": True,
+            "pixel_size_um": float(p.get("pixel_size_um", 0.0)),
+            "match_tol_nm": float(p.get("match_tol_nm", 0.0)),
+            "track_gate_nm": float(p.get("track_gate_nm", 0.0)),
+            "frame_offset": int(p.get("frame_offset", 0)),
+            "pixel_size_inferred": bool(p.get("pixel_size_inferred", False)),
+            "pixel_size_source": str(p.get("pixel_size_source", "given")),
+            "photon_budget_assumed": bool(p.get("photon_budget_assumed", False)),
+        }
 
     # ── figures ───────────────────────────────────────────────────────────
     @Property(int, notify=figureChanged)

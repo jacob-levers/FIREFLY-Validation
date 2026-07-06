@@ -21,7 +21,11 @@ MOBILE_D_THRESHOLD_DEFAULT = 0.05
 
 DIFF_COLUMNS = ["particle", "D", "alpha", "motion", "MSD0", "MSE",
                 "loc_sigma_nm", "mean_radial_displacement_um",
-                "radius_of_gyration_um"]
+                "radius_of_gyration_um", "fit_status"]
+
+# Per-track fit outcomes recorded in the `fit_status` column so a NaN D can be
+# told apart from a solver failure (see `_msd_and_fit_one`).
+FIT_STATUS = ("ok", "immobile", "linear_fallback", "failed", "too_short")
 
 
 def msd_linear(t, D, offset):
@@ -86,6 +90,7 @@ def _msd_and_fit_one(xy_um, frames, pid, lag_times, max_lagtime, n_fit,
     msd0 = np.nan
     mse = np.nan
     immobile = False
+    status = "too_short"          # updated below to reflect the actual outcome
     n_ok = int(ok.sum())
     t_ok, m_ok = t[ok], m[ok]
     if n_ok >= 4:
@@ -103,6 +108,7 @@ def _msd_and_fit_one(xy_um, frames, pid, lag_times, max_lagtime, n_fit,
             D, alpha, msd0 = float(popt[0]), float(popt[1]), float(popt[2])
             _resid = m_ok - msd_anomalous(t_ok, *popt)
             mse = float(np.mean(_resid ** 2))
+            status = "ok"
             # Identifiability guard: a jitter-dominated track has a flat MSD
             # (dynamic term ≈ 0), so alpha is unconstrained — drop it.
             t_hi = float(t_ok[-1])
@@ -112,8 +118,9 @@ def _msd_and_fit_one(xy_um, frames, pid, lag_times, max_lagtime, n_fit,
             if alpha <= 1e-3 or alpha >= 2.0 - 1e-3 or dyn_frac < 0.10:
                 alpha = np.nan
                 immobile = True
+                status = "immobile"
         except Exception:
-            pass
+            status = "failed"     # solver error, not "no data"
     if not np.isfinite(D) and not immobile and n_ok >= 3:
         try:
             _slope = float(np.polyfit(np.log(t_ok), np.log(m_ok), 1)[0])
@@ -131,8 +138,10 @@ def _msd_and_fit_one(xy_um, frames, pid, lag_times, max_lagtime, n_fit,
             msd0 = float(popt[1])
             _resid = m_ok - msd_linear(t_ok, *popt)
             mse = float(np.mean(_resid ** 2))
+            status = "linear_fallback"
         except Exception:
-            pass
+            if status != "failed":
+                status = "failed"
 
     if np.isfinite(alpha):
         motion = classify_motion(alpha, alpha_thresholds)
@@ -154,7 +163,7 @@ def _msd_and_fit_one(xy_um, frames, pid, lag_times, max_lagtime, n_fit,
     return pid, msd_vals, dict(particle=pid, D=D, alpha=alpha, motion=motion,
                                MSD0=msd0, MSE=mse, loc_sigma_nm=loc_sigma_nm,
                                mean_radial_displacement_um=mean_radial,
-                               radius_of_gyration_um=rg)
+                               radius_of_gyration_um=rg, fit_status=status)
 
 
 def compute_diff_from_tracks(tracks, pixel_size_um, frame_interval_s,
@@ -185,3 +194,16 @@ def compute_diff_from_tracks(tracks, pixel_size_um, frame_interval_s,
                                    alpha_thresholds)
         rows.append(d)
     return pd.DataFrame(rows, columns=DIFF_COLUMNS)
+
+
+def summarize_fit_status(diff: pd.DataFrame) -> dict:
+    """Count per-track fit outcomes from a diff DataFrame's ``fit_status`` column.
+
+    Returns ``{status: count}`` over `FIT_STATUS` (missing column → ``{}``), so the
+    UI/report can say e.g. "42 fit / 5 immobile / 3 failed" and a NaN D is never
+    mistaken for a silent solver failure.
+    """
+    if diff is None or "fit_status" not in getattr(diff, "columns", []):
+        return {}
+    counts = diff["fit_status"].value_counts()
+    return {s: int(counts.get(s, 0)) for s in FIT_STATUS if counts.get(s, 0)}

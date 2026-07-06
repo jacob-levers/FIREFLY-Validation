@@ -204,7 +204,14 @@ Rectangle {
                     MetricStat { Layout.fillWidth: true; label: "Tracks"; value: (root.gt.n_tracks !== undefined ? root.gt.n_tracks : 0) + "" }
                     MetricStat { Layout.fillWidth: true; label: "Localisations"; value: (root.gt.n_locs || 0) + "" }
                     MetricStat { Layout.fillWidth: true; label: "Frames"; value: (root.gt.n_frames || 0) + "" }
-                    MetricStat { Layout.fillWidth: true; label: "Pixel size"; value: (root.gt.pixel_size_um || 0).toFixed(3); unit: "µm" }
+                    MetricStat { Layout.fillWidth: true; label: "Pixel size"; value: (root.gt.pixel_size_um || 0).toFixed(3)
+                                 unit: "µm" + (root.gt.pixel_size_source === "default" ? " (default)" : "")
+                                 tone: root.gt.pixel_size_source === "default" ? pal.TXT_MUTED : pal.TXT }
+                    // Applied frame shift — "auto" quietly rebases frames; show it
+                    // so a coordinate/frame misalignment is never silent.
+                    MetricStat { Layout.fillWidth: true; label: "Frame shift"
+                                 value: (root.gt.frame_offset > 0 ? "+" : "") + (root.gt.frame_offset || 0)
+                                 tone: root.gt.frame_offset ? pal.TXT : pal.TXT_MUTED }
                     MetricStat { Layout.fillWidth: true; label: "Truth D"
                                  value: root.gt.has_truth_D ? (root.gt.truth_d || "—") : "—"
                                  unit: root.gt.truth_d_unit || ""

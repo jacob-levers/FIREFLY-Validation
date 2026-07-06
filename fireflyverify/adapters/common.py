@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-DEFAULT_PX_UM = 0.106
-DEFAULT_DT_S = 0.02
+# Re-exported from the package-level constants module so there is one source of
+# truth for the acquisition fallbacks (existing `from ...common import
+# DEFAULT_PX_UM` call sites keep working).
+from fireflyverify.constants import DEFAULT_DT_S, DEFAULT_PX_UM  # noqa: F401
 
 
 @dataclass

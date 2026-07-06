@@ -13,6 +13,8 @@ import argparse
 import os
 import sys
 
+from fireflyverify.constants import DEFAULT_DT_S
+
 
 def _cmd_score(a) -> int:
     from fireflyverify.adapters.firefly_output import load_firefly_output
@@ -93,7 +95,7 @@ def main(argv=None) -> int:
     s.add_argument("--gt", required=True, help="ground-truth CSV or ISBI-2012 XML")
     s.add_argument("--gt-stack", default=None, dest="gt_stack", help="optional image stack for XML")
     s.add_argument("--pixel-size", type=float, default=0.0, dest="pixel_size", help="µm/px (0=default)")
-    s.add_argument("--frame-interval", type=float, default=0.02, dest="frame_interval", help="s/frame")
+    s.add_argument("--frame-interval", type=float, default=DEFAULT_DT_S, dest="frame_interval", help="s/frame")
     s.add_argument("--frame-base", default="auto", choices=["auto", "0", "1"], dest="frame_base")
     s.add_argument("--firefly", default=None, help="FIREFLY output folder")
     s.add_argument("--palmtracer", default=None, help="palmTRACER output folder")

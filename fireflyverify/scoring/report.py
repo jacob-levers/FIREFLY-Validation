@@ -15,7 +15,10 @@ from fireflyverify.scoring.metrics import (detection_metrics, tracking_isbi,
 
 _TABLE_COLS = ["tool", "f1", "jaccard", "precision", "recall", "rmse_nm",
                "jsc", "jsc_theta", "isbi_alpha", "isbi_beta", "isbi_rmse_nm",
-               "n_tracks", "n_matched"]
+               "n_tracks", "n_matched",
+               # scoring provenance — the conditions the scores were computed
+               # under, so a report is auditable and reproducible.
+               "pixel_size_um", "match_tol_nm", "track_gate_nm"]
 
 
 def evaluate(tool_result, sim_result, *, tol_px=None, gate_px=None) -> dict:
@@ -38,7 +41,20 @@ def evaluate(tool_result, sim_result, *, tol_px=None, gate_px=None) -> dict:
         jsc=trk["jsc"], jsc_theta=trk["jsc_theta"], isbi_alpha=trk["alpha"],
         isbi_beta=trk["beta"], isbi_rmse_nm=trk["rmse_nm"],
         n_tracks=trk["n_est_tracks"],
+        pixel_size_um=float(px),
+        match_tol_nm=float(tol_px * px * 1000.0),
+        track_gate_nm=float(gate_px * px * 1000.0),
         _detail=dict(detection=det, tracking=trk, diffusion=dif),
+        _provenance=dict(
+            pixel_size_um=float(px), psf_sigma_px=float(sigma),
+            match_tol_px=float(tol_px), track_gate_px=float(gate_px),
+            match_tol_nm=float(tol_px * px * 1000.0),
+            track_gate_nm=float(gate_px * px * 1000.0),
+            pixel_size_source=meta.get("pixel_size_source", "given"),
+            pixel_size_inferred=bool(meta.get("pixel_size_inferred", False)),
+            frame_offset=int(meta.get("frame_offset", 0)),
+            photon_budget_assumed=bool(meta.get("photon_budget_assumed", False)),
+        ),
     )
 
 

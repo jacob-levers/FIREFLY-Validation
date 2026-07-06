@@ -126,9 +126,16 @@ and the better tool is obvious at a glance:
 **Hover** a metric name (it tints blue) for its plain-English meaning and the rating
 bands; **hover** a value for its rating + meaning.
 
+Below the table, a **provenance line** states the exact conditions the scores were
+computed under — the resolved pixel size, the detection tolerance and tracking gate
+(in nm), and any frame shift applied — so a run is auditable and reproducible. When a
+**common re-fit** is on, each tool also shows its **MSD-fit outcomes** (e.g. *"312 fit ·
+40 immobile · 5 failed"*), so a blank *D* is never mistaken for a silent solver failure.
+
 ### 4. Report
 Export the whole comparison:
-- **CSV** — the metric table (machine-readable, for your own plots/stats).
+- **CSV** — the metric table plus the scoring-provenance columns
+  (`pixel_size_um`, `match_tol_nm`, `track_gate_nm`) so results stay auditable.
 - **PDF** — a one-page-per-panel report of the figures.
 
 ---

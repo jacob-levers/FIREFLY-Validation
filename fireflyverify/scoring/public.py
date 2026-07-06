@@ -17,6 +17,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from fireflyverify.constants import (DEFAULT_DT_S, DEFAULT_PX_UM,
+                                     MIN_PSF_SIGMA_PX, default_psf_sigma_px)
+
 # Lower-cased, unit-suffix-stripped column name -> canonical key.
 _ALIASES = {
     "frame": "frame", "t": "frame", "slice": "frame", "plane": "frame",
@@ -39,7 +42,7 @@ def _is_nm(col: str) -> bool:
 
 
 def load_gt_dataset(tif_path, gt_csv_path, *, pixel_size_um=None,
-                    frame_interval_s=0.02, frame_offset=None):
+                    frame_interval_s=DEFAULT_DT_S, frame_offset=None):
     """Return a `SimResult(stack, gt_locs, gt_tracks=empty, meta)` for an external
     image stack + per-localisation ground-truth CSV.  Reuse it with
     `compare_engines` / `evaluate` to score the detectors against this GT."""
@@ -64,7 +67,7 @@ def load_gt_dataset(tif_path, gt_csv_path, *, pixel_size_um=None,
 
     frame = gt[canon["frame"]].to_numpy(float).astype(int)
     if frame_offset is None:                       # 1-indexed → 0; 0-indexed → 0
-        frame_offset = -int(frame.min())
+        frame_offset = -int(frame.min()) if len(frame) else 0
     frame = frame + frame_offset
 
     x = gt[canon["x"]].to_numpy(float)
@@ -81,7 +84,7 @@ def load_gt_dataset(tif_path, gt_csv_path, *, pixel_size_um=None,
             pixel_size_um = max(np.nanmax(x) / W, np.nanmax(y) / H) / 1000.0
             inferred_px = True
         else:
-            pixel_size_um = 0.106                   # already px; size only scales RMSE-nm
+            pixel_size_um = DEFAULT_PX_UM           # already px; size only scales RMSE-nm
     px_nm = pixel_size_um * 1000.0
     if in_nm:
         x = x / px_nm
@@ -92,7 +95,8 @@ def load_gt_dataset(tif_path, gt_csv_path, *, pixel_size_um=None,
               f"beyond the camera FOV).  Pass pixel_size_um / --pixel-size with the "
               f"dataset's true value to avoid a coordinate MISALIGNMENT.")
 
-    photons = (gt[canon["intensity"]].to_numpy(float) if "intensity" in canon
+    has_intensity = "intensity" in canon
+    photons = (gt[canon["intensity"]].to_numpy(float) if has_intensity
                else np.ones(len(gt)))
     gt_locs = pd.DataFrame({"frame": frame, "x": x, "y": y, "photons": photons})
     n0 = len(gt_locs)
@@ -102,19 +106,30 @@ def load_gt_dataset(tif_path, gt_csv_path, *, pixel_size_um=None,
     gt_locs = gt_locs[(gt_locs["frame"] >= 0) & (gt_locs["frame"] < T)
                       & (gt_locs["x"] >= 0) & (gt_locs["x"] < W)
                       & (gt_locs["y"] >= 0) & (gt_locs["y"] < H)].reset_index(drop=True)
-    if n0 - len(gt_locs):
-        print(f"  Dropped {n0 - len(gt_locs):,} ground-truth localisation(s) "
+    n_dropped = n0 - len(gt_locs)
+    if n_dropped:
+        print(f"  Dropped {n_dropped:,} ground-truth localisation(s) "
               f"outside the {W}x{H} FOV / frame range (not detectable).")
 
-    sigma_nm = (float(gt[canon["sigma"]].median()) if "sigma" in canon
-                else 0.21 * 660.0 / 1.4)            # ~Gaussian-PSF default
+    if "sigma" in canon:
+        psf_sigma_px = max(MIN_PSF_SIGMA_PX, float(gt[canon["sigma"]].median()) / px_nm)
+    else:
+        psf_sigma_px = default_psf_sigma_px(pixel_size_um)   # ~Gaussian-PSF default
+    has_bg = "background" in canon
     meta = {
         "pixel_size_um": float(pixel_size_um),
+        "pixel_size_source": "inferred" if inferred_px else "given",
+        "pixel_size_inferred": bool(inferred_px),
         "frame_interval_s": float(frame_interval_s),
-        "psf_sigma_px": max(0.5, sigma_nm / px_nm),
+        "frame_offset": int(frame_offset),
+        "psf_sigma_px": psf_sigma_px,
         "photons_per_emitter": float(np.median(photons)) if len(photons) else 500.0,
-        "bg_photons": (float(gt[canon["background"]].median())
-                       if "background" in canon else 1.0),
+        "bg_photons": (float(gt[canon["background"]].median()) if has_bg else 1.0),
+        # The CRLB floor is only meaningful with a real photon budget; flag when
+        # intensity/background were absent so the UI/report can caveat it.
+        "photon_budget_assumed": not (has_intensity and has_bg),
+        "n_dropped_out_of_fov": int(n_dropped),
+        "populations": {},
     }
     gt_tracks = pd.DataFrame(columns=["frame", "x", "y", "particle", "population"])
     return SimResult(stack=stack.astype(np.float32), gt_locs=gt_locs,

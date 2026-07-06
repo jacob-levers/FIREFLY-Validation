@@ -16,7 +16,14 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
 
+from fireflyverify.constants import CRLB_BG_FLOOR
+
 _BIG = 1e9
+
+# Empty-input convention (applied consistently below): a metric is NaN only when
+# it is genuinely UNDEFINED — i.e. there is no data on the axis it measures (no
+# estimates → precision undefined; no ground truth → recall undefined). When data
+# exists but nothing matched, the metric is a real, defined 0.0.
 
 
 # ── detection + localisation precision ────────────────────────────────────────
@@ -53,10 +60,16 @@ def detection_metrics(est_locs: pd.DataFrame, gt_locs: pd.DataFrame,
         fp += len(e) - ntp
         fn += len(g) - ntp
         dxs.append(dx); dys.append(dy)
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    jaccard = tp / (tp + fp + fn) if tp + fp + fn else 0.0
+    # NaN when undefined (no estimates / no GT / no data at all); see convention above.
+    precision = tp / (tp + fp) if tp + fp else float("nan")   # undefined w/o estimates
+    recall = tp / (tp + fn) if tp + fn else float("nan")      # undefined w/o ground truth
+    if not (np.isfinite(precision) and np.isfinite(recall)):
+        f1 = float("nan")
+    elif precision + recall == 0:
+        f1 = 0.0                                              # both defined and zero
+    else:
+        f1 = 2 * precision * recall / (precision + recall)
+    jaccard = tp / (tp + fp + fn) if tp + fp + fn else float("nan")  # undefined w/o data
     dx = np.concatenate(dxs) if dxs else np.empty(0)
     dy = np.concatenate(dys) if dys else np.empty(0)
     out = dict(precision=precision, recall=recall, f1=f1, jaccard=jaccard,
@@ -93,7 +106,7 @@ def crlb_sigma_nm(photons: float, bg_photons: float, psf_sigma_px: float,
     if photons <= 0:
         return float("nan")
     # Mortensen 2010 Eq. 54 (2D, background-limited correction)
-    tau = 2.0 * np.pi * (sa2) * max(bg_photons, 1e-9) / (photons * a * a)
+    tau = 2.0 * np.pi * (sa2) * max(bg_photons, CRLB_BG_FLOOR) / (photons * a * a)
     var_px = (sa2 / photons) * (1.0 + 4.0 * tau + np.sqrt(max(2.0 * tau / (1.0 + 4.0 * tau), 0.0)))
     return float(np.sqrt(var_px) * pixel_size_um * 1000.0)
 
@@ -263,12 +276,23 @@ def diffusion_recovery(est_diff: pd.DataFrame, gt_tracks: pd.DataFrame,
         a_est = np.array(b["alpha_est"], float)
         with np.errstate(divide="ignore", invalid="ignore"):
             rel = D_est / D_true - 1.0
+        # Relative bias is undefined when D_true≈0 (immobile) — rel → ±inf there,
+        # and inf is NOT filtered by nanmedian, so drop non-finite values first.
+        rel_finite = rel[np.isfinite(rel)]
         per_pop[pop] = dict(
             n=int(len(D_est)),
-            D_true=float(np.nanmedian(D_true)),
-            D_est_median=float(np.nanmedian(D_est)),
-            D_bias_pct=float(np.nanmedian(rel) * 100.0) if np.isfinite(rel).any() else float("nan"),
+            D_true=_safe_nanmedian(D_true),
+            D_est_median=_safe_nanmedian(D_est),
+            D_bias_pct=float(np.median(rel_finite) * 100.0) if rel_finite.size else float("nan"),
             D_iqr=float(np.nanpercentile(D_est, 75) - np.nanpercentile(D_est, 25)) if len(D_est) > 1 else 0.0,
-            alpha_est_median=float(np.nanmedian(a_est)),
+            alpha_est_median=_safe_nanmedian(a_est),
         )
     return dict(per_population=per_pop, confusion=confusion)
+
+
+def _safe_nanmedian(a: np.ndarray) -> float:
+    """`nanmedian` that returns NaN (quietly) for an empty or all-NaN slice
+    instead of raising a RuntimeWarning."""
+    a = np.asarray(a, float)
+    finite = a[np.isfinite(a)]
+    return float(np.median(finite)) if finite.size else float("nan")

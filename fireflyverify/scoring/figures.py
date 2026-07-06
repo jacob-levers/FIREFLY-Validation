@@ -90,7 +90,14 @@ def render_summary(rows, sim, tools, w, h):
     crlb = crlb_sigma_nm(meta.get("photons_per_emitter", 0), meta.get("bg_photons", 0),
                          meta.get("psf_sigma_px", 1.0), meta.get("pixel_size_um", 0.1))
     if np.isfinite(crlb):
-        ax.axhline(crlb, color="#f85149", ls="--", lw=1.2, label=f"CRLB ≈ {crlb:.0f} nm")
+        # When the photon budget is a placeholder (imported GT), the CRLB floor is
+        # only indicative — label it so it is never read as a physical limit.
+        if meta.get("photon_budget_assumed"):
+            nph = meta.get("photons_per_emitter", 0)
+            label = f"CRLB ≈ {crlb:.0f} nm (assumed {nph:.0f} ph)"
+        else:
+            label = f"CRLB ≈ {crlb:.0f} nm"
+        ax.axhline(crlb, color="#f85149", ls="--", lw=1.2, label=label)
         ax.legend(fontsize=8, frameon=False, labelcolor=_TXT)
     # precision–recall
     ax = _style(axes[1, 1], "Detection precision–recall")
